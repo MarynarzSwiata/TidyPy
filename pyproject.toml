@@ -1,0 +1,22 @@
+[project]
+name = "tidypy"
+version = "0.1.0"
+description = "File and folder organizer with CLI and GUI"
+authors = [
+    {name = "Magnus",email = "marynarzswiata@gmail.com"}
+]
+license = {text = "MIT"}
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+    "typer (>=0.20.0,<0.21.0)",
+    "pytest (>=8.4.2,<9.0.0)",
+    "black (>=25.9.0,<26.0.0)",
+    "ruff (>=0.14.3,<0.15.0)",
+    "customtkinter (>=5.2.2,<6.0.0)"
+]
+
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"

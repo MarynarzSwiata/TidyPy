@@ -2,9 +2,10 @@
 
 This module exposes a Typer-based CLI that forwards work to the core logic.
 Current commands:
-- scan     → list directory contents using the core scanner
-- preview  → show placeholder planned operations
-- version  → display CLI version
+- scan     – list directory contents using the core scanner
+- preview  – show planned rename operations
+- apply    – execute planned operations (supports dry-run)
+- version  – display CLI version
 """
 
 from __future__ import annotations
@@ -13,13 +14,15 @@ from pathlib import Path
 
 import typer
 
-from tidypy.core.operations import plan_operations
+from tidypy.core.models import PlannedOperation
+from tidypy.core.operations import apply_operations, plan_operations
 from tidypy.core.scanner import scan_directory
 
 app = typer.Typer(
     help="TidyPy command-line interface",
     no_args_is_help=True,
 )
+
 
 @app.callback()
 def root() -> None:
@@ -40,7 +43,7 @@ def _format_size(size: int | None) -> str:
     return f"({value:.1f} PB)"
 
 
-def _format_operation_label(operation) -> str:
+def _format_operation_label(operation: PlannedOperation) -> str:
     """Return a human-readable label for a planned operation."""
     return f"[{operation.op_type.upper()}] {operation.source} -> {operation.target}"
 
@@ -114,7 +117,7 @@ def preview(
 ) -> None:
     """Preview planned operations without touching the filesystem."""
     try:
-        operations = plan_operations(path=path, recursive=recursive)
+        operations = plan_operations(path=path, recursive=recursive, rule_name=rule)
     except ValueError as error:
         typer.echo(f"Error: {error}")
         raise typer.Exit(code=1) from error
@@ -124,10 +127,59 @@ def preview(
         return
 
     for operation in operations:
-        # Skip operations where source == target (no actual change)
-        if operation.source == operation.target:
-            continue
         typer.echo(_format_operation_label(operation))
+
+
+@app.command("apply")
+def apply(
+    path: Path = typer.Argument(
+        ...,
+        callback=_validate_directory,
+        help="Directory to apply",
+    ),
+    recursive: bool = typer.Option(
+        False,
+        "--recursive",
+        "-r",
+        help="Traverse directories recursively",
+    ),
+    rule: str = typer.Option(
+        "dots_to_spaces",
+        "--rule",
+        "-R",
+        help="Rename rule to apply",
+    ),
+    dry_run: bool = typer.Option(
+        True,
+        "--dry-run/--no-dry-run",
+        help="Preview changes instead of executing them",
+    ),
+    overwrite: bool = typer.Option(
+        False,
+        "--overwrite",
+        help="Overwrite existing targets when they already exist",
+    ),
+) -> None:
+    """Apply planned operations, optionally as a dry run."""
+    try:
+        operations = plan_operations(path=path, recursive=recursive, rule_name=rule)
+    except ValueError as error:
+        typer.echo(f"Error: {error}")
+        raise typer.Exit(code=1) from error
+
+    if not operations:
+        typer.echo("No planned operations found.")
+        return
+
+    log_lines = apply_operations(
+        operations=operations,
+        dry_run=dry_run,
+        overwrite=overwrite,
+    )
+
+    for line in log_lines:
+        typer.echo(line)
+
 
 @app.command("version", help="Show TidyPy CLI version.")
 def version() -> None:

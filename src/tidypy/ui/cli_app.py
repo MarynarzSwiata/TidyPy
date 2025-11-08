@@ -1,15 +1,10 @@
-"""
-TidyPy CLI Application
-----------------------
-Multi-command interface using Typer.
+"""Command-line interface for the TidyPy application.
 
-Commands:
-- scan: Lists directory contents (recursively if specified)
-- version: Shows current CLI version
-
-Run examples:
-    python -m src.tidypy.ui.cli_app scan . --recursive
-    python -m src.tidypy.ui.cli_app version
+This module exposes a Typer-based CLI that forwards work to the core logic.
+Current commands:
+- scan     → list directory contents using the core scanner
+- preview  → show placeholder planned operations
+- version  → display CLI version
 """
 
 from __future__ import annotations
@@ -18,6 +13,7 @@ from pathlib import Path
 
 import typer
 
+from tidypy.core.operations import plan_operations
 from tidypy.core.scanner import scan_directory
 
 app = typer.Typer(
@@ -25,24 +21,28 @@ app = typer.Typer(
     no_args_is_help=True,
 )
 
-
 @app.callback()
 def root() -> None:
     """Root command group for TidyPy CLI."""
-    # nothing to do here yet; callback forces multi-command mode
+    # Callback forces multi-command mode; no extra work at the moment.
     return None
 
-"""Convert byte size to human-readable format (e.g., 2048 -> '2 KB')."""
+
 def _format_size(size: int | None) -> str:
-    """Return human-readable file size."""
+    """Return a human-readable file size string."""
     if size is None:
         return ""
-    value: float = float(size)
+    value = float(size)
     for unit in ["B", "KB", "MB", "GB", "TB"]:
         if value < 1024:
             return f"({value:.0f} {unit})"
         value /= 1024
     return f"({value:.1f} PB)"
+
+
+def _format_operation_label(operation) -> str:
+    """Return a human-readable label for a planned operation."""
+    return f"[{operation.op_type.upper()}] {operation.source} -> {operation.target}"
 
 
 def _validate_directory(value: str) -> Path:
@@ -53,6 +53,7 @@ def _validate_directory(value: str) -> Path:
     if not path.is_dir():
         raise typer.BadParameter(f"Path is not a directory: {path}")
     return path
+
 
 @app.command("scan")
 def scan(
@@ -83,7 +84,6 @@ def scan(
     root_path = path.resolve()
 
     for item in items:
-        # if user disabled root entry, skip it
         if not include_root and item.path == root_path:
             continue
 
@@ -91,10 +91,47 @@ def scan(
         size_text = "" if item.is_dir else _format_size(item.size)
         typer.echo(f"{label:<7} {item.path} {size_text}")
 
-"""Display current version of the TidyPy CLI tool."""
+
+@app.command("preview")
+def preview(
+    path: Path = typer.Argument(
+        ...,
+        callback=_validate_directory,
+        help="Directory to preview",
+    ),
+    recursive: bool = typer.Option(
+        False,
+        "--recursive",
+        "-r",
+        help="Traverse directories recursively",
+    ),
+    rule: str = typer.Option(
+        "dots_to_spaces",
+        "--rule",
+        "-R",
+        help="Rename rule to apply",
+    ),
+) -> None:
+    """Preview planned operations without touching the filesystem."""
+    try:
+        operations = plan_operations(path=path, recursive=recursive)
+    except ValueError as error:
+        typer.echo(f"Error: {error}")
+        raise typer.Exit(code=1) from error
+
+    if not operations:
+        typer.echo("No planned operations found.")
+        return
+
+    for operation in operations:
+        # Skip operations where source == target (no actual change)
+        if operation.source == operation.target:
+            continue
+        typer.echo(_format_operation_label(operation))
+
 @app.command("version", help="Show TidyPy CLI version.")
 def version() -> None:
-    """Show current TidyPy CLI version."""
+    """Display current CLI version."""
     typer.echo("TidyPy CLI version 0.1.0")
 
 
